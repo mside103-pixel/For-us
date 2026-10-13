@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Full Log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,500&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+:root{
+  --deep-purple:#141318;--soft-purple:#8d7c9c;--rose-gold:#c99383;--ink:#f3eef0;--muted:#a79fa9;
+  --card-bg:#151317;--glow:0 0 22px rgba(201,147,131,.14);
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;font-family:'Quicksand',sans-serif;color:var(--ink);}
+body{
+  background:radial-gradient(120% 70% at 50% -10%, rgba(201,147,131,.09), transparent 60%),
+             radial-gradient(90% 60% at 100% 100%, rgba(141,124,156,.08), transparent 60%),
+             linear-gradient(160deg,#0d0b10,#08070a 55%,#020202);
+  min-height:100%;
+}
+.hidden{display:none !important;}
+button{cursor:pointer;}
+
+/* log page */
+#logPage{max-width:640px;margin:0 auto;padding:18px 14px 60px;}
+#logHeader{text-align:center;margin-bottom:22px;}
+#logHeader .t{font-family:'Playfair Display',serif;font-style:italic;font-size:22px;color:var(--rose-gold);}
+#logHeader .s{font-size:12px;color:var(--muted);margin-top:4px;}
+.daysep{text-align:center;font-size:11.5px;color:var(--muted);background:rgba(255,255,255,.05);display:inline-block;padding:5px 14px;border-radius:12px;margin:20px auto 12px;position:sticky;top:8px;z-index:2;}
+.daysep-wrap{display:flex;justify-content:center;}
+.entry{display:flex;gap:10px;padding:12px;border-radius:16px;background:var(--card-bg);border:1px solid rgba(201,147,131,.1);box-shadow:var(--glow);margin-bottom:10px;}
+.entry .ic{font-size:18px;flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.05);display:flex;align-items:center;justify-content:center;}
+.entry .body{flex:1;min-width:0;}
+.entry .who{font-size:12.5px;font-weight:600;}
+.entry .what{font-size:13.5px;color:var(--ink);margin-top:2px;word-break:break-word;}
+.entry .when{font-size:10.5px;color:var(--muted);margin-top:4px;}
+.entry .thumb{margin-top:8px;max-width:160px;border-radius:10px;display:block;cursor:pointer;}
+.entry .vid-thumb{margin-top:8px;width:160px;height:100px;border-radius:10px;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:24px;cursor:pointer;}
+.entry audio.logaudio{margin-top:8px;max-width:220px;}
+#emptyState{text-align:center;color:var(--muted);font-size:13px;margin-top:40px;}
+#loadMore{display:block;margin:18px auto;padding:10px 20px;border-radius:14px;border:1px solid rgba(201,147,131,.25);background:rgba(255,255,255,.04);color:var(--ink);font-size:13px;}
+
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:50;display:flex;align-items:center;justify-content:center;}
+.lightbox img,.lightbox video{max-width:94vw;max-height:88vh;border-radius:8px;}
+.lightbox-close{position:absolute;top:calc(env(safe-area-inset-top,0px) + 14px);right:16px;background:rgba(255,255,255,.1);border:none;color:#fff;width:36px;height:36px;border-radius:50%;font-size:16px;}
+</style>
+</head>
+<body>
+
+<div id="logPage">
+  <div id="logHeader">
+    <div class="t">Full Log</div>
+    <div class="s">Every message, action and change — permanently, in order.</div>
+  </div>
+  <div id="entries"></div>
+  <div id="emptyState" class="hidden">Nothing logged yet.</div>
+  <button id="loadMore" class="hidden">Load older entries</button>
+</div>
+
+<script>
+const SUPABASE_URL = "https://lzagntpccmvyirvtzwst.supabase.co";
+const SUPABASE_KEY = "sb_publishable_nra8AJ_mOx22lxLj4MpvDw_Zi7ExCnU";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const USERS = { irfu:{emoji:"🧸",name:"Irfan"}, rifu:{emoji:"👰🏻‍♀️",name:"Rifana"} };
+let oldestLoaded = null;
+const PAGE_SIZE = 60;
+
+function el(id){ return document.getElementById(id); }
+
+loadEntries(true);
+subscribeLive();
+
+function fmtTime(ts){ return new Date(ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
+function fmtDate(ts){ return new Date(ts).toLocaleDateString('en-GB',{weekday:'long',day:'2-digit',month:'short',year:'numeric'}); }
+
+const ICONS = {
+  message_text:'💬', message_image:'🖼️', message_video:'🎥', message_voice:'🎤',
+  message_sticker:'😀', message_location:'📍',
+  action_kiss:'💋', action_hug:'🤗', action_slap:'👋',
+  mood_change:'🙂', status_text:'📝', status_photo:'📸',
+  wallpaper_change:'🖼️', profile_photo_change:'🪞', birthday_set:'🎂', chat_cleared:'🗑️'
+};
+
+function describe(row){
+  const name = (USERS[row.actor_id]&&USERS[row.actor_id].name) || row.actor_id || 'Someone';
+  switch(row.event_type){
+    case 'message_text': return `${name} sent: "${row.detail||''}"`;
+    case 'message_image': return `${name} sent a photo`;
+    case 'message_video': return `${name} sent a video`;
+    case 'message_voice': return `${name} sent a voice message`;
+    case 'message_sticker': return `${name} sent a sticker ${row.detail||''}`;
+    case 'message_location': return `${name} shared their location`;
+    case 'action_kiss': return `${name} sent a kiss 💋`;
+    case 'action_hug': return `${name} sent a hug 🤗`;
+    case 'action_slap': return `${name} sent a slap 👋`;
+    case 'mood_change': return `${name} set mood to "${row.detail||''}"`;
+    case 'status_text': return `${name} updated status: "${row.detail||''}"`;
+    case 'status_photo': return `${name} posted a photo status`;
+    case 'wallpaper_change': return `${name} changed wallpaper (${row.detail||''})`;
+    case 'profile_photo_change': return `${name} changed their profile photo`;
+    case 'birthday_set': return `${name} set birthday to ${row.detail||''}`;
+    case 'chat_cleared': return `${name} cleared the chat view — ${row.detail||''}`;
+    default: return `${name} — ${row.event_type}`;
+  }
+}
+
+function renderEntry(row){
+  const wrap = document.createElement('div');
+  wrap.className='entry';
+  wrap.dataset.day = new Date(row.created_at).toDateString();
+  const icon = ICONS[row.event_type] || '•';
+  let media = '';
+  if(row.event_type==='message_image' || row.event_type==='status_photo' || row.event_type==='profile_photo_change' || (row.event_type==='wallpaper_change' && row.media_url)){
+    if(row.media_url) media = `<img class="thumb" src="${row.media_url}" onclick="openLightbox('${row.media_url}',false)">`;
+  } else if(row.event_type==='message_video'){
+    if(row.media_url) media = `<div class="vid-thumb" onclick="openLightbox('${row.media_url}',true)">▶ Tap to play</div>`;
+  } else if(row.event_type==='message_voice'){
+    if(row.voice_data) media = `<audio class="logaudio" controls src="${row.voice_data}"></audio>`;
+  } else if(row.event_type==='message_location' && row.detail){
+    media = `<div style="margin-top:6px;"><a href="${row.detail}" target="_blank" style="color:var(--rose-gold);">Open location ↗</a></div>`;
+  }
+  wrap.innerHTML = `
+    <div class="ic">${icon}</div>
+    <div class="body">
+      <div class="who">${(USERS[row.actor_id]&&USERS[row.actor_id].emoji)||''} ${(USERS[row.actor_id]&&USERS[row.actor_id].name)||row.actor_id||''}</div>
+      <div class="what">${describe(row)}</div>
+      ${media}
+      <div class="when">${fmtDate(row.created_at)} · ${fmtTime(row.created_at)}</div>
+    </div>`;
+  wrap._row = row;
+  return wrap;
+}
+
+function insertWithDaySeparators(rows, container, prepend){
+  let lastDay = container.dataset.lastDay || null;
+  const frag = document.createDocumentFragment();
+  rows.forEach(row=>{
+    const day = new Date(row.created_at).toDateString();
+    if(day!==lastDay){
+      const sepWrap=document.createElement('div'); sepWrap.className='daysep-wrap';
+      const sep=document.createElement('div'); sep.className='daysep'; sep.textContent=fmtDate(row.created_at);
+      sepWrap.appendChild(sep);
+      frag.appendChild(sepWrap);
+      lastDay=day;
+    }
+    frag.appendChild(renderEntry(row));
+  });
+  container.dataset.lastDay = lastDay;
+  if(prepend) container.insertBefore(frag, container.firstChild);
+  else container.appendChild(frag);
+}
+
+async function loadEntries(first){
+  const container = el('entries');
+  /* always fetch newest-first from the DB, then flip to chronological order for display */
+  let query = sb.from('activity_log').select('*').order('created_at',{ascending:false}).limit(PAGE_SIZE);
+  if(oldestLoaded) query = query.lt('created_at', oldestLoaded);
+  const res = await query;
+  const rows = (res.data || []).slice().reverse(); // oldest-of-this-batch first, newest last
+  if(first && rows.length===0){ el('emptyState').classList.remove('hidden'); return; }
+  if(rows.length){
+    oldestLoaded = rows[0].created_at;
+    if(first){
+      container.dataset.lastDay=''; /* reset — this batch is being rendered top-to-bottom fresh */
+      insertWithDaySeparators(rows, container, false);
+      window.scrollTo(0, document.body.scrollHeight);
+    } else {
+      prependWithDaySeparators(rows, container);
+    }
+  }
+  el('loadMore').classList.toggle('hidden', (res.data||[]).length < PAGE_SIZE);
+}
+function prependWithDaySeparators(rows, container){
+  /* re-render everything from scratch — simplest safe way to keep day separators correct when older history is added above what's already shown */
+  const existing = Array.from(container.querySelectorAll('.entry')).map(elx=>elx._row).filter(Boolean);
+  const all = rows.concat(existing);
+  const scrollBefore = document.body.scrollHeight - window.scrollY;
+  container.innerHTML='';
+  container.dataset.lastDay='';
+  insertWithDaySeparators(all, container, false);
+  window.scrollTo(0, document.body.scrollHeight - scrollBefore);
+}
+el('loadMore').onclick = ()=>loadEntries(false);
+
+function subscribeLive(){
+  sb.channel('log-live')
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'activity_log'},payload=>{
+      insertWithDaySeparators([payload.new], el('entries'), false);
+      window.scrollTo(0, document.body.scrollHeight);
+    })
+    .subscribe();
+}
+
+function openLightbox(url,isVideo){
+  const overlay=document.createElement('div');
+  overlay.className='lightbox';
+  overlay.innerHTML = isVideo
+    ? `<video src="${url}" controls autoplay playsinline></video><button class="lightbox-close" type="button">✕</button>`
+    : `<img src="${url}"><button class="lightbox-close" type="button">✕</button>`;
+  overlay.onclick=(e)=>{ if(e.target===overlay||e.target.classList.contains('lightbox-close')) overlay.remove(); };
+  document.body.appendChild(overlay);
+}
+</script>
+</body>
+</html>
