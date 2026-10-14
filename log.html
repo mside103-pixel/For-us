@@ -61,8 +61,8 @@ button{cursor:pointer;}
 </div>
 
 <script>
-const SUPABASE_URL = "https://lzagntpccmvyirvtzwst.supabase.co";
-const SUPABASE_KEY = "sb_publishable_nra8AJ_mOx22lxLj4MpvDw_Zi7ExCnU";
+const SUPABASE_URL = "https://zksixmpnppntpxfjiedm.supabase.co";
+const SUPABASE_KEY = "sb_publishable_AwUlw4H0wEfeFxp-WB3YTg_cweqZZUg";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const USERS = { irfu:{emoji:"🧸",name:"Irfan"}, rifu:{emoji:"👰🏻‍♀️",name:"Rifana"} };
@@ -102,6 +102,7 @@ function describe(row){
     case 'status_photo': return `${name} posted a photo status`;
     case 'wallpaper_change': return `${name} changed wallpaper (${row.detail||''})`;
     case 'profile_photo_change': return `${name} changed their profile photo`;
+    case 'name_change': return `${name} changed their name to "${row.detail||''}"`;
     case 'birthday_set': return `${name} set birthday to ${row.detail||''}`;
     case 'chat_cleared': return `${name} cleared the chat view — ${row.detail||''}`;
     default: return `${name} — ${row.event_type}`;
